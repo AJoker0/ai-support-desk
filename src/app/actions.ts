@@ -11,7 +11,7 @@ export async function createTicket(formData: FormData) {
   const content = formData.get('content') as string;
 
   if (!clientName?.trim() || !content?.trim()) {
-    throw new Error('Имя и текст обращения обязательны');
+    return;
   }
 
   await prisma.ticket.create({
@@ -25,38 +25,48 @@ export async function createTicket(formData: FormData) {
 }
 
 export async function analyzeTicket(ticketId: string) {
-  const ticket = await prisma.ticket.findUnique({
-    where: { id: ticketId },
-  });
+  try {
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+    });
 
-  if (!ticket) {
-    throw new Error('Тикет не найден');
+    if (!ticket) {
+      return { success: false, error: 'Звернення не знайдено' };
+    }
+
+    const { object } = await generateObject({
+      model: google('gemini-2.5-flash'),
+      schema: z.object({
+        priority: z.enum(['низький', 'середній', 'високий']),
+        category: z.string().describe('Категорія звернення: наприклад, оплата, доставка, скарга або інше'),
+        summary: z.string().describe('Короткий підсумок проблеми клієнта рівно в 1 речення'),
+        draftReply: z.string().describe('Ввічливий, конструктивний проєкт відповіді клієнту'),
+      }),
+      prompt: `Ти — кваліфікований AI-асистент служби підтримки клієнтів. Проаналізуй це звернення.
+Ім'я клієнта: ${ticket.clientName}
+Текст звернення: ${ticket.content}
+
+Правила:
+1. Визнач пріоритет: «низький» (запитання, подяка), «середній» (затримка, дрібні збої), «високий» (фінансові проблеми, звинувачення, агресивна скарга).
+2. Визнач точну коротку категорію (оплата, доставка, скарга, технічний збій тощо).
+3. Зроби короткий підсумок проблеми рівно в 1 речення.
+4. Напиши готову чернетку відповіді клієнту на мові звернення.`,
+    });
+
+    await prisma.ticket.update({
+      where: { id: ticketId },
+      data: {
+        priority: object.priority,
+        category: object.category,
+        summary: object.summary,
+        draftReply: object.draftReply,
+      },
+    });
+
+    revalidatePath('/');
+    return { success: true };
+  } catch (error) {
+    console.error('Помилка аналізу AI:', error);
+    return { success: false, error: 'Помилка під час звернення до AI. Перевірте API ключ або модель' };
   }
-
-  const { object } = await generateObject({
-    model: google('gemini-2.5-flash'),
-    schema: z.object({
-      priority: z.enum(['низкий', 'средний', 'высокий']),
-      category: z.string().describe('Категория: например, оплата, доставка, жалоба или другое'),
-      summary: z.string().describe('Краткая суть строго в одно предложение'),
-      draftReply: z.string().describe('Вежливый и емкий черновик ответа клиенту'),
-    }),
-    prompt: `Ты ассистент службы поддержки. Проанализируй входящее обращение клиента.
-Имя клиента: ${ticket.clientName}
-Текст обращения: ${ticket.content}
-
-Определи приоритет (низкий, средний, высокий), определи категорию, напиши саммари ровно в 1 предложение и подготовь вежливый черновик ответа клиенту на языке обращения.`,
-  });
-
-  await prisma.ticket.update({
-    where: { id: ticketId },
-    data: {
-      priority: object.priority,
-      category: object.category,
-      summary: object.summary,
-      draftReply: object.draftReply,
-    },
-  });
-
-  revalidatePath('/');
 }
