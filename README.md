@@ -24,3 +24,10 @@
 1. Встановіть залежності:
    ```bash
    npm install
+
+
+<img width="1823" height="1394" alt="{C5CA9CA5-9E6B-47D8-83C2-E9C44D70C050}" src="https://github.com/user-attachments/assets/ab5dffd3-942e-4938-b31c-7f75de6c695f" />
+
+<img width="1270" height="893" alt="{724F4171-EB3B-4147-8246-7A078B6EF856}" src="https://github.com/user-attachments/assets/01861782-0657-4c8b-baaa-a09c545d2a0b" />
+
+<img width="1388" height="1344" alt="{31CA2842-0168-4BFD-AFFF-9691BC6824C8}" src="https://github.com/user-attachments/assets/706ccf36-4e70-42cc-a9fb-c54417549dd1" />
