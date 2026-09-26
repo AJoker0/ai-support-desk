@@ -5,19 +5,20 @@ import { generateObject } from 'ai';
 import { google } from '@ai-sdk/google';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+import { APP_CONFIG } from '@/lib/constants';
 
 export async function createTicket(formData: FormData) {
-  const clientName = formData.get('clientName') as string;
-  const content = formData.get('content') as string;
+  const clientName = formData.get('clientName')?.toString().trim();
+  const content = formData.get('content')?.toString().trim();
 
-  if (!clientName?.trim() || !content?.trim()) {
+  if (!clientName || !content) {
     return;
   }
 
   await prisma.ticket.create({
     data: {
-      clientName: clientName.trim(),
-      content: content.trim(),
+      clientName,
+      content,
     },
   });
 
@@ -31,26 +32,31 @@ export async function analyzeTicket(ticketId: string) {
     });
 
     if (!ticket) {
-      return { success: false, error: 'Звернення не знайдено' };
+      return { success: false, error: 'Звернення не знайдено в базі' };
     }
 
     const { object } = await generateObject({
-      model: google('gemini-2.5-flash'),
+      model: google(APP_CONFIG.llmModel),
       schema: z.object({
         priority: z.enum(['низький', 'середній', 'високий']),
-        category: z.string().describe('Категорія звернення: наприклад, оплата, доставка, скарга або інше'),
-        summary: z.string().describe('Короткий підсумок проблеми клієнта рівно в 1 речення'),
-        draftReply: z.string().describe('Ввічливий, конструктивний проєкт відповіді клієнту'),
+        category: z.string().describe('Коротка категорія: оплата, доставка, повернення, технічне, відгук'),
+        summary: z.string().describe('Суть звернення клієнта рівно в 1 змістовне речення українською мовою'),
+        draftReply: z.string().describe('Жива, ввічлива та конструктивна відповідь клієнту по суті без канцеляризмів'),
       }),
-      prompt: `Ти — кваліфікований AI-асистент служби підтримки клієнтів. Проаналізуй це звернення.
-Ім'я клієнта: ${ticket.clientName}
-Текст звернення: ${ticket.content}
+      prompt: `Ти — спеціаліст підтримки сервісу. Проаналізуй звернення.
 
-Правила:
-1. Визнач пріоритет: «низький» (запитання, подяка), «середній» (затримка, дрібні збої), «високий» (фінансові проблеми, звинувачення, агресивна скарга).
-2. Визнач точну коротку категорію (оплата, доставка, скарга, технічний збій тощо).
-3. Зроби короткий підсумок проблеми рівно в 1 речення.
-4. Напиши готову чернетку відповіді клієнту на мові звернення.`,
+Дані клієнта:
+- Ім'я: ${ticket.clientName}
+- Повідомлення: "${ticket.content}"
+
+Вимоги:
+1. Пріоритет:
+   - "високий": списання грошей, конфліктні ситуації, непрацюючий оплачений сервіс
+   - "середній": питання по доставці, повернення товару, затримки
+   - "низький": консультації, прості питання, відгуки та подяки
+2. Категорія: максимум 1-2 слова українською.
+3. Підсумок: рівно 1 речення.
+4. Чернетка: жива, людяна відповідь без шаблонів на мові звернення клієнта.`,
     });
 
     await prisma.ticket.update({
@@ -66,7 +72,10 @@ export async function analyzeTicket(ticketId: string) {
     revalidatePath('/');
     return { success: true };
   } catch (error) {
-    console.error('Помилка аналізу AI:', error);
-    return { success: false, error: 'Помилка під час звернення до AI. Перевірте API ключ або модель' };
+    console.error('AI Analysis error:', error);
+    return {
+      success: false,
+      error: 'Не вдалося обробити через AI. Перевірте квоту або API ключ.',
+    };
   }
 }
